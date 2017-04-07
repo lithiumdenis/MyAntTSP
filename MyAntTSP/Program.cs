@@ -9,11 +9,11 @@ namespace MyAntTSP
         private double alpha;
         private double beta;
         private double tmax;
-        private double m;
+        private int m;
         private double q;
         private double rho;
-        private double a;
-        private double b;
+        private int a;
+        private int b;
         private int n;
         private double[,] d;
 
@@ -44,7 +44,7 @@ namespace MyAntTSP
         /// <summary>
         /// Количество муравьев в колонии
         /// </summary>
-        public double M
+        public int M
         {
             get { return m; }
         }
@@ -68,7 +68,7 @@ namespace MyAntTSP
         /// <summary>
         /// Начальная вершина
         /// </summary>
-        public double A
+        public int A
         {
             get { return a; }
         }
@@ -76,7 +76,7 @@ namespace MyAntTSP
         /// <summary>
         /// Конечная вершина
         /// </summary>
-        public double B
+        public int B
         {
             get { return b; }
         }
@@ -84,7 +84,7 @@ namespace MyAntTSP
         /// <summary>
         /// Количество вершин
         /// </summary>
-        public double N
+        public int N
         {
             get { return n; }
         }
@@ -206,8 +206,134 @@ namespace MyAntTSP
         }
     }
 
+    struct WayType
+    {
+        public int itabu;
+        public int length;
+        public int[] tabu;
+    }
+
     class Program : Data
     {
+
+        public static double probability(int to, WayType ant, double[,] pheromone, double[,] distance, Data data)
+        {
+            // если вершина уже посещена, возвращаем 0
+            for (int i = 0; i < ant.itabu; ++i)
+                if (to == ant.tabu[i])
+                    return 0;
+
+            double sum = 0;
+            int from = ant.tabu[ant.itabu - 1];
+            // считаем сумму в знаминателе
+            for (int j = 0; j < data.N; ++j)
+            {
+                int flag = 1;
+                // проверяем, посещал ли муравей j вершину
+                for (int i = 0; i < ant.itabu; ++i)
+                    if (j == ant.tabu[i])
+                        flag = 0;
+                // если нет, тогда прибавляем к общей сумме
+                if (flag != 0)
+                    sum += Math.Pow(pheromone[from, j], data.Alpha) * Math.Pow(distance[from, j], data.Beta);
+            }
+
+            // возвращаем значение вероятности
+            return Math.Pow(pheromone[from, to], data.Alpha) * Math.Pow(distance[from, to], data.Beta) / sum;
+        }
+
+
+
+        public static WayType AntColonyOptimization(Data data)
+        {
+            // инициализация данных о лучшем маршруте
+            WayType way;
+            way.itabu = 0;
+            way.length = -1;
+            way.tabu = new int[data.N];
+
+            // инициализация данных о расстоянии и количестве феромона
+            double[,] distance = new double[data.N, data.N];
+            double[,] pheromone = new double[data.N, data.N];
+
+            for (int i = 0; i < data.N; ++i)
+            {
+                for (int j = 0; j < data.N; ++j)
+                {
+                    pheromone[i, j] = 1.0 / data.N;
+                    if (i != j)
+                        distance[i, j] = 1.0 / data.D[i, j];
+                }
+            }
+
+            // инициализация муравьев
+            WayType[] ants = new WayType[data.M];
+            for (int k = 0; k < data.M; ++k)
+            {
+                ants[k].itabu = 0;
+                ants[k].length = 0;
+                ants[k].tabu = new int[data.N];
+                ants[k].tabu[ants[k].itabu++] = data.A;
+            }
+
+            // основной цикл
+            for (int t = 0; t < data.Tmax; ++t)
+            {
+                // цикл по муравьям
+                for (int k = 0; k < data.M; ++k)
+                {
+                    // поиск маршрута для k-го муравья
+                    do
+                    {
+                        int j_max = -1;
+                        double p_max = 0.0;
+                        for (int j = 0; j < data.N; ++j)
+                        {
+                            // Проверка вероятности перехода в вершину j
+                            if (ants[k].tabu[ants[k].itabu - 1] != j)
+                            {
+                                double p = probability(j, ants[k], pheromone, distance, data);
+                                if (p != 0 && p >= p_max)
+                                {
+                                    p_max = p;
+                                    j_max = j;
+                                }
+                            }
+                        }
+                        ants[k].length += Convert.ToInt32(data.D[ants[k].tabu[ants[k].itabu - 1], j_max]);
+                        ants[k].tabu[ants[k].itabu++] = j_max;
+                    } while (ants[k].tabu[ants[k].itabu - 1] != data.B);
+                    // оставляем феромон на пути муравья
+                    for (int i = 0; i < ants[k].itabu - 1; ++i)
+                    {
+                        int from = ants[k].tabu[i % ants[k].itabu];
+                        int to = ants[k].tabu[(i + 1) % ants[k].itabu];
+                        pheromone[from, to] += data.Q / ants[k].length;
+                        pheromone[to, from] = pheromone[from, to];
+                    }
+                    // проверка на лучшее решение
+                    if (ants[k].length < way.length || way.length < 0)
+                    {
+                        way.itabu = ants[k].itabu;
+                        way.length = ants[k].length;
+                        for (int i = 0; i < way.itabu; ++i) way.tabu[i] = ants[k].tabu[i];
+                    }
+                    // обновление муравьев
+                    ants[k].itabu = 1;
+                    ants[k].length = 0;
+                }
+                // цикл по ребрам
+                for (int i = 0; i < data.N; ++i)
+                    for (int j = 0; j < data.N; ++j)
+                        // обновление феромона для ребра (i, j)
+                        if (i != j)
+                            pheromone[i, j] *= (1 - data.Rho);
+            }
+            // возвращаем кратчайший маршрут
+            return way;
+        }
+
+
         static void Main(string[] args)
         {
 
@@ -215,19 +341,18 @@ namespace MyAntTSP
 
             printMatrix(info.D);
 
+            WayType way = AntColonyOptimization(info);
 
 
+            Console.Write("Длина пути: ");
+            Console.WriteLine(way.length);
 
+            Console.Write("Путь: ");
+            Console.Write(++way.tabu[0]);
 
-
-
-
-
-
-
-
-
-
+            for (int i = 1; i < way.itabu; ++i)
+                Console.Write(" -> " + ++way.tabu[i]);
+            Console.WriteLine();
         }
     }
 }
