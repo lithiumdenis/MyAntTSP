@@ -47,7 +47,7 @@ namespace MyAntTSP
         /// <param name="beta">Параметр beta</param>
         /// <param name="wayd">Набор всех путей из всех вершин</param>
         /// <returns></returns>
-        public static WayData getNextWay(int startPoint, double alpha, double beta, List<WayData> wayd, List<int> taboo)
+        public static WayData getNextWay(int startPoint, double alpha, double beta, List<WayData> wayd, List<int> taboo, Random rnd)
         {
             //Вероятности переходов во все возможные вершины
             List<double> probs = new List<double>();
@@ -79,8 +79,8 @@ namespace MyAntTSP
             }
 
             //Запуск "рулетки"
-            Random rnd = new Random();
-            double rouletteVal = 0.6;//rnd.NextDouble();
+            double rouletteVal = rnd.NextDouble(); //0.6 для теста
+            //Console.WriteLine(rouletteVal);
 
             //Идентификатор промежутка, в который попадет значение рулетки
             int curr = 0;
@@ -101,7 +101,7 @@ namespace MyAntTSP
         /// <summary>
         /// Учесть то, что длины, к примеру, 4-2 равны 2-4. Для этого делаем дублирование
         /// </summary>
-        /// <param name="wayd"></param>
+        /// <param name="wayd">Набор всех путей из всех вершин</param>
         public static void considerPermutations(List<WayData> wayd)
         {
             //Промежуточное сохранение
@@ -117,6 +117,57 @@ namespace MyAntTSP
             }
         }
 
+        /// <summary>
+        /// Визуализация пройденного муравьём пути в терминале
+        /// </summary>
+        /// <param name="allWay">Упорядоченные промежуточные пункты пути</param>
+        /// <param name="wayLength">Длина пути</param>
+        /// <param name="ant">Номер муравья</param>
+        public static void printAllWay(List<double> allWay, double wayLength, int ant)
+        {
+            Console.Write("Путь " + (ant + 1) + ": ");
+            for (int i = 0; i < allWay.Count - 1; i++)
+            {
+                Console.Write(allWay[i] + " -> ");
+            }
+            Console.Write(allWay[allWay.Count - 1] + ". Длина пути: " + wayLength + "\n");
+        }
+
+        /// <summary>
+        /// Обновление феромона после выполнения прохода муравья
+        /// </summary>
+        /// <param name="wayd">Набор всех путей из всех вершин</param>
+        /// <param name="allWay">Упорядоченные промежуточные пункты пути</param>
+        /// <param name="deltaTau">Положительный прирост феромона на пройденном пути</param>
+        /// <param name="rho">Коэффициент испарения феромона</param>
+        public static void updatePheromone(List<WayData> wayd, List<double> allWay, double deltaTau, double rho)
+        {
+            bool flag;
+            //Рассмотрим каждый путь в отдельности
+            foreach (var item in wayd)
+            {
+                flag = false;
+                //Посмотрим, не является ли он таким, по которому ходил муравей
+                for (int i = 0; i < allWay.Count - 1; i++)
+                {
+                    //Если начало и конец пути равны текущему и следующему пункту пройденного пути (или является их перестановкой)
+                    if ((item.i == allWay[i] && item.j == allWay[i + 1]) || (item.i == allWay[i + 1] && item.j == allWay[i]))
+                    {
+                        //Добавляем фермон, который принес муравей и делаем испарение
+                        item.tau = (1 - rho) * item.tau + deltaTau;
+                        //Отметим то, что данный путь уже учтён
+                        flag = true;
+                        break;
+                    }
+                }
+                if(flag == false)
+                {
+                    //Муравей ничего не принес, только испарение
+                    item.tau = (1 - rho) * item.tau;
+                }
+            }
+        }
+
         static void Main(string[] args)
         {
             //Количество городов
@@ -125,7 +176,7 @@ namespace MyAntTSP
             int startPoint = 1;
 
             //Количество феромона
-            double q = 100;
+            double Q = 60;
             //Коэффициент испарения феромона
             double rho = 0.5;
 
@@ -147,35 +198,47 @@ namespace MyAntTSP
             double alpha = 1;
             double beta = 1;
 
-            //Запрещённые пункты, где муравей уже был
-            List<int> taboo = new List<int>();    
+            //Количество муравьёв, которые пройдут путь
+            int countOfAnt = 60;
 
-            //Сохраняем все вершины пути по-порядку
-            List<double> allWay = new List<double>();
-            //Сохраняем длину данного пути
-            double wayLength = 0;
+            //Инициализация рандомайзера
+            Random rnd = new Random();
 
-            //Первая итерация, добавляем в путь первую вершину
-            allWay.Add(startPoint);
-            WayData nextWay = getNextWay(startPoint, alpha, beta, wayd, taboo);
-            allWay.Add(nextWay.j);
-            wayLength += nextWay.length;
-
-            //Пока не закончатся города, в которые можно ходить
-            while (taboo.Count != countOfPoints - 1)
+            for (int ant = 0; ant < countOfAnt; ant++)
             {
-                //Вызываем метод для последней вершины, куда перешли
-                nextWay = getNextWay(nextWay.j, alpha, beta, wayd, taboo);
+                //Запрещённые пункты, где муравей уже был
+                List<int> taboo = new List<int>();
+
+                //Сохраняем все вершины пути по-порядку
+                List<double> allWay = new List<double>();
+                //Сохраняем длину данного пути
+                double wayLength = 0;
+
+                //Первая итерация, добавляем в путь первую вершину
+                allWay.Add(startPoint);
+                WayData nextWay = getNextWay(startPoint, alpha, beta, wayd, taboo, rnd);
                 allWay.Add(nextWay.j);
                 wayLength += nextWay.length;
+
+                //Пока не закончатся города, в которые можно ходить
+                while (taboo.Count != countOfPoints - 1)
+                {
+                    //Вызываем метод для последней вершины, куда перешли
+                    nextWay = getNextWay(nextWay.j, alpha, beta, wayd, taboo, rnd);
+                    allWay.Add(nextWay.j);
+                    wayLength += nextWay.length;
+                }
+
+                //Вывод полученного для данного муравья пути
+                printAllWay(allWay, wayLength, ant);
+
+                //Работа с феромонами
+                //Положительный прирост феромона на пройденном пути
+                double deltaTau = Q / wayLength;
+
+                //Обновляем феромоны в зависимости от результатов
+                updatePheromone(wayd, allWay, deltaTau, rho);
             }
-
-            
-            //Вывод пути
-            //Работа с феромонами
-            int ololo = 5;
-
-
         }
     }
 
