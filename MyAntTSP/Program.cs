@@ -10,36 +10,125 @@ namespace MyAntTSP
         /// Вероятность перехода из пункта в пункт
         /// </summary>
         /// <param name="way">Рассматриваемый путь из i в j</param>
+        /// <param name="alpha">Параметр alpha</param>
+        /// <param name="beta">Параметр beta</param>
+        /// <param name="wayd">Набор всех путей из всех вершин</param>
         /// <returns></returns>
-        public static double probability(WayData way, double alpha, double beta, List<WayData> wayd)
+        public static double probability(WayData way, double alpha, double beta, List<WayData> wayd, List<int> taboo)
         {
             double sumDop = 0;
-
-            double a1 = 0;
-            double a2 = 0;
-            double a3 = 0;
-            double a4 = 0;
-
+            bool flag;
             foreach (var item in wayd)
             {
-                //Если вершина не использовалась и начальный путь совпадает с начальным путем для item
-                if (item.isUsed == false && item.i == way.i)
+                flag = true;
+                //Если начальный путь совпадает с начальным путем для item
+                if (item.i == way.i)
                 {
-                    a3 = Math.Pow((1.0 / item.length), beta);
-                    a4 = Math.Pow(item.tau, alpha);
-                    a1 = (a3 * a4);
-                    sumDop += a1;
+                    //Если вершина находится в списке вершин, которые уже были рассмотрены ранее, то flag == false
+                    foreach (var elem in taboo)
+                    {
+                        if (elem == item.j)
+                            flag = false;
+                    }
+
+                    //Если в списке запрещенных вершин не примелькалось, то используем
+                    if(flag == true)
+                        sumDop += (Math.Pow((1.0 / item.length), beta) * Math.Pow(item.tau, alpha));
+                }
+            }
+            return (Math.Pow((1.0 / way.length), beta) * Math.Pow(way.tau, alpha)) / sumDop;;
+        }
+
+        /// <summary>
+        /// Получение пути, по которому будет из данной точки далее двигаться муравей 
+        /// </summary>
+        /// <param name="startPoint">Начальная вершина</param>
+        /// <param name="alpha">Параметр alpha</param>
+        /// <param name="beta">Параметр beta</param>
+        /// <param name="wayd">Набор всех путей из всех вершин</param>
+        /// <returns></returns>
+        public static WayData getNextWay(int startPoint, double alpha, double beta, List<WayData> wayd, List<int> taboo)
+        {
+            //Вероятности переходов во все возможные вершины
+            List<double> probs = new List<double>();
+            //Сохранение вершин для соотнесения с вероятностями
+            List<WayData> ways = new List<WayData>();
+
+            bool flag;
+            //Получаем список вероятностей вершин, в которые возможен переход
+            foreach (var item in wayd)
+            {
+                flag = true;
+                //Если начальный пункт совпадает с начальным пунктом для пути item
+                if (item.i == startPoint)
+                {
+                    //Если вершина находится в списке вершин, которые уже были рассмотрены ранее, то flag == false
+                    foreach (var elem in taboo)
+                    {
+                        if (elem == item.j)
+                            flag = false;
+                    }
+
+                    //Если в списке запрещенных вершин не примелькалось, то используем
+                    if (flag == true)
+                    {
+                        probs.Add(probability(item, alpha, beta, wayd, taboo));
+                        ways.Add(item);
+                    }
                 }
             }
 
-            a2 = 100 * (Math.Pow((1.0 / way.length), beta) * Math.Pow(way.tau, alpha)) / sumDop;
+            //Запуск "рулетки"
+            Random rnd = new Random();
+            double rouletteVal = 0.6;//rnd.NextDouble();
 
-            return a2;
+            //Идентификатор промежутка, в который попадет значение рулетки
+            int curr = 0;
+            //Нахождение интересующего интервала. Если он найден, выходим из цикла
+            for (double i = 0; ; i+=probs[curr], curr++)
+            {
+                if (i < rouletteVal && rouletteVal < (i + probs[curr]))
+                    break;
+            }
+
+            //В точку, с которой сейчас будем уходить, больше ходить нельзя
+            taboo.Add(startPoint);
+
+            //Возвращаем путь, по которому предлагается двигаться далее
+            return ways[curr];
         }
 
+        /// <summary>
+        /// Учесть то, что длины, к примеру, 4-2 равны 2-4. Для этого делаем дублирование
+        /// </summary>
+        /// <param name="wayd"></param>
+        public static void considerPermutations(List<WayData> wayd)
+        {
+            //Промежуточное сохранение
+            List<WayData> wayp = new List<WayData>();
+            foreach (var item in wayd)
+            {
+                wayp.Add(new WayData(item.j, item.i, item.length, item.tau));
+            }
+
+            foreach (var item in wayp)
+            {
+                wayd.Add(item);
+            }
+        }
 
         static void Main(string[] args)
         {
+            //Количество городов
+            int countOfPoints = 5;
+            //Город, с которого надо начать путь
+            int startPoint = 1;
+
+            //Количество феромона
+            double q = 100;
+            //Коэффициент испарения феромона
+            double rho = 0.5;
+
             List<WayData> wayd = new List<WayData>();
             wayd.Add(new WayData(1, 2, 38, 3));
             wayd.Add(new WayData(1, 3, 74, 2));
@@ -52,13 +141,40 @@ namespace MyAntTSP
             wayd.Add(new WayData(3, 5, 85, 2));
             wayd.Add(new WayData(4, 5, 42, 1));
 
+            //Сохраняем ещё и возможные перестановки городов местами
+            considerPermutations(wayd);
+
             double alpha = 1;
             double beta = 1;
 
-            double p1 = probability(wayd[0], alpha, beta, wayd);
-            double p2 = probability(wayd[1], alpha, beta, wayd);
-            double p3 = probability(wayd[2], alpha, beta, wayd);
-            double p4 = probability(wayd[3], alpha, beta, wayd);
+            //Запрещённые пункты, где муравей уже был
+            List<int> taboo = new List<int>();    
+
+            //Сохраняем все вершины пути по-порядку
+            List<double> allWay = new List<double>();
+            //Сохраняем длину данного пути
+            double wayLength = 0;
+
+            //Первая итерация, добавляем в путь первую вершину
+            allWay.Add(startPoint);
+            WayData nextWay = getNextWay(startPoint, alpha, beta, wayd, taboo);
+            allWay.Add(nextWay.j);
+            wayLength += nextWay.length;
+
+            //Пока не закончатся города, в которые можно ходить
+            while (taboo.Count != countOfPoints - 1)
+            {
+                //Вызываем метод для последней вершины, куда перешли
+                nextWay = getNextWay(nextWay.j, alpha, beta, wayd, taboo);
+                allWay.Add(nextWay.j);
+                wayLength += nextWay.length;
+            }
+
+            
+            //Вывод пути
+            //Работа с феромонами
+            int ololo = 5;
+
 
         }
     }
@@ -69,14 +185,13 @@ namespace MyAntTSP
         public int j;               //Пункт j
         public double length;       //Расстояние между пунктами i и j
         public double tau;          //Количество феромона на пути
-        public bool isUsed;         //Был ли уже здесь этот муравей 
+        
         public WayData(int I, int J, double Length, double Tau)
         {
             i = I;
             j = J;
             length = Length;
             tau = Tau;
-            isUsed = false; //default 
         }
     }
 }
